@@ -47,7 +47,7 @@ viol %>% filter( Civ_Crim_bin=="criminal" ) %>% ggplot( aes( x=Year, y=Penalty_A
 
 
 ```{r}
-summary( lm( Penalty_Amount ~ Year + Civ_Crim_bin, data=viol ) )
+summary( lm( Penalty_Amount ~ Year, data=viol[ viol$Civ_Crim_bin=="civil", ] ) )
 ```
 
 ```{r}
