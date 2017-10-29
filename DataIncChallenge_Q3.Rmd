@@ -1,0 +1,56 @@
+---
+title: "Data Incubator Challenge - Question 2"
+author: "Will Pitchers"
+date: "Saturday, 28 October 2017"
+output: html_notebook
+---
+
+```{r load packages}
+setwd( "/Users/willpitchers/Documents/=Job_Applications_etc/Data_Incubator_2017" )
+
+require( tidyverse )
+require( data.table )
+```
+
+
+data from `https://www.goodjobsfirst.org/violation-tracker`
+
+```{r}
+viol <- tbl_df( fread( "violoation_tracker_export.csv" ))
+
+names( viol ) <- gsub( " ", "_", names( viol ))
+
+viol <- viol %>% mutate( Year=as.integer( Year ), Industry_code=factor( Industry_in_Record ), Civ_Crim=factor( `Civil/Criminal` ) ) %>%
+                  mutate( HQ_State_of_Parent=factor( HQ_State_of_Parent ), HQ_Country_of_Parent=factor( HQ_Country_of_Parent ) ) %>%
+                  mutate( Primary_Offense=factor( Primary_Offense ), Penalty_Amount=as.numeric( gsub( "[$,]", "", Penalty_Amount ) ) ) %>% 
+                  mutate( Penalty_Adj=as.numeric( gsub( "[$,]", "", Penalty_Amount_Adjusted_For_Eliminating_Multiple_Counting )) ) %>% 
+                  mutate( Subtraction_From_Penalty=as.numeric( "[$,]", "", Subtraction_From_Penalty ) ) %>% 
+                  mutate( Agency=factor( Agency ), Secondary_Offense=factor( Secondary_Offense ), Ownership_Structure=factor( Ownership_Structure ) ) %>% 
+                  mutate( Major_Industry_of_Parent=factor( Major_Industry_of_Parent ), Zip=factor( Zip ) )
+
+str( viol )
+
+```
+
+
+```{r}
+viol <- viol %>% mutate( Civ_Crim_bin=factor( ifelse( grepl( "civil and criminal", `Civil/Criminal` )=="TRUE", "both", 
+                                              ifelse( grepl( "civil", `Civil/Criminal` )=="TRUE", "civil", "criminal" ))))
+
+viol %>% ggplot( aes( x=Year, y=Penalty_Amount ) ) + geom_point( aes( col=Civ_Crim_bin ), alpha=0.5 ) + ylab( "Penalty amount" )
+
+```
+
+```{r}
+viol %>% filter( Civ_Crim_bin=="criminal" ) %>% ggplot( aes( x=Year, y=Penalty_Amount ) ) + geom_point( alpha=0.5 ) + ylab( "Penalty amount" )
+```
+
+
+```{r}
+summary( lm( Penalty_Amount ~ Year + Civ_Crim_bin, data=viol ) )
+```
+
+```{r}
+table( viol$Civ_Crim_bin, viol$Year )
+```
+
