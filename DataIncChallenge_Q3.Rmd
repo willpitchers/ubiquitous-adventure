@@ -1,22 +1,23 @@
 ---
-title: "Data Incubator Challenge - Question 2"
+title: "Data Incubator Challenge - Question 3: Project pitch"
 author: "Will Pitchers"
 date: "Saturday, 28 October 2017"
 output: html_notebook
 ---
 
 ```{r load packages}
-setwd( "/Users/willpitchers/Documents/=Job_Applications_etc/Data_Incubator_2017" )
-
 require( tidyverse )
 require( data.table )
+require( maps )
+require( zipcode )
+require( lme4 )
 ```
 
+This dataset covers the period of 2000--2017 and includes 62560 records of fines levied against corporations relating to violations of regulations, from cases initiated by 43 federal regulatory agencies. I downloaded the data from the Good Jobs First ["Violation Tracker"](https://www.goodjobsfirst.org/violation-tracker), using the search GUI with all the options set to `<any>`.
 
-data from `https://www.goodjobsfirst.org/violation-tracker`
 
-```{r}
-viol <- tbl_df( fread( "violoation_tracker_export.csv" ))
+```{r read in data}
+viol <- tbl_df( fread( "/Users/willpitchers/Documents/=Job_Applications_etc/Data_Incubator_2017/violation_tracker_export.csv" ))
 
 names( viol ) <- gsub( " ", "_", names( viol ))
 
@@ -26,31 +27,153 @@ viol <- viol %>% mutate( Year=as.integer( Year ), Industry_code=factor( Industry
                   mutate( Penalty_Adj=as.numeric( gsub( "[$,]", "", Penalty_Amount_Adjusted_For_Eliminating_Multiple_Counting )) ) %>% 
                   mutate( Subtraction_From_Penalty=as.numeric( "[$,]", "", Subtraction_From_Penalty ) ) %>% 
                   mutate( Agency=factor( Agency ), Secondary_Offense=factor( Secondary_Offense ), Ownership_Structure=factor( Ownership_Structure ) ) %>% 
-                  mutate( Major_Industry_of_Parent=factor( Major_Industry_of_Parent ), Zip=factor( Zip ) )
+                  mutate( Major_Industry_of_Parent=factor( Major_Industry_of_Parent ), Zip=factor( Zip ), Facility_State=factor( Facility_State ) )
 
-str( viol )
-
-```
-
-
-```{r}
 viol <- viol %>% mutate( Civ_Crim_bin=factor( ifelse( grepl( "civil and criminal", `Civil/Criminal` )=="TRUE", "both", 
                                               ifelse( grepl( "civil", `Civil/Criminal` )=="TRUE", "civil", "criminal" ))))
 
-viol %>% ggplot( aes( x=Year, y=Penalty_Amount ) ) + geom_point( aes( col=Civ_Crim_bin ), alpha=0.5 ) + ylab( "Penalty amount" )
+# str( viol )
+# summary( viol$Year )
+viol
+```
 
+## The Size of Penalties
+
+This dataset contains fields for both `Penalty_Amount` and `Penalty_Amount_Adjusted_For_Eliminating_Multiple_Counting`, but is clear that these adjustments make very little difference to the data as a whole, as these two variables are correlation at r=`r round( cor( viol$Penalty_Amount, viol$Penalty_Adj ), 3)`. I have thus elected to use the adjusted penalty values for all these analyses.
+
+The first pattern to note is that (perhaps predictably) the penalties imposed via *criminal* proceedings tend to be larger than those imposed via *civil* proceedings, and larger still when both civil *and* criminal proceedings have been brought.
+
+```{r penalty civ vs. crim}
+viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( Penalty_Adj )) + 
+          geom_density( aes( col=Civ_Crim_bin, fill=Civ_Crim_bin ), alpha=.5 ) + 
+          scale_x_log10() + 
+          xlab( "Penalty (log10 $'s)" ) + 
+          scale_fill_discrete( name="Type of\ncase brought") + 
+          scale_colour_discrete( name="Type of\ncase brought" )
+```
+
+The way this pattern is built up is somewhat non-intuitive, as this linear model and boxplot makes clear. The groups mean are well-separated, and easy to distinguish statistically (small p-values), but there is so much variation within groups that the predictive value of the mean differences is small (low R^2^ value). The vast majority of penalties arise from civil actions -- `r round(length(viol$Penalty_Adj[viol$Civ_Crim_bin=="civil"])/length(viol$Penalty_Adj)*100,1)`% of those recorded -- and the mean value of these penalties is comparatively small.
+
+```{r no.s crim vs. civ, fig.keep='last'}
+summary( lm( Penalty_Adj ~ Civ_Crim_bin, data=viol ) )
+
+viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( Civ_Crim_bin, Penalty_Adj )) + 
+                                        geom_point( colour="blue", alpha=0.3, position="jitter" ) + 
+                                        geom_boxplot( outlier.size=0, alpha=0 ) + 
+                                        coord_flip() + 
+                                        xlab( "Type of case brought" ) +
+                                        scale_y_log10() +
+                                        ylab( "Penalty (log10 $'s)" )
+```
+
+## Trends over Time
+
+Modelling the relationship between penalty values and the year the penalty was imposed reveals an increasing trend, with the coefficent for year indicating an increase of ~$950k per year. However, the R^2^ value for this model indicates that it accounts for only 0.05% of the variation in the data. 
+
+This makes sense with reference to the scatter plot, where we can see that the trend for annual increase (represented by the dashed black line) is pretty modest when compared to *huge* variation in the size of penalties (note log^10^ scale).
+
+```{r penalty by year}
+summary( lm( Penalty_Adj ~ Year, data=viol ) )
+
+viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( x=Year, y=Penalty_Adj ) ) + 
+                                        geom_jitter( aes( col=Civ_Crim_bin ), alpha=0.5, width=.2, height=0 ) +
+                                        ylab( "Penalty amount (log10 $'s)" ) +
+                                        geom_smooth( method="lm", col="black", lty=2 ) + 
+                                        scale_colour_discrete( name="Type of\ncase brought" ) +
+                                        scale_y_log10()
+```
+
+## Where are Violations Occurring?
+
+Taking a broad-strokes view of the geographical data, we can see that there seems not to be a visually apparent trend in the locations where penalties are levied -- this data appears to track pretty well with the locations of population centres, thought here may be more subtle patterns that are not visible at the nation-wide scale.
+
+```{r penalty map, warning=FALSE}
+data( zipcode )
+zipcode <- zipcode %>% mutate( zip=factor( zip ), region=substr( zip, 1, 1) )
+
+full_join( viol, zipcode, by=c( "Zip" = "zip" ) ) %>% mutate( Zip=factor( Zip ) ) %>% filter( Civ_Crim_bin=="civil" ) %>% 
+    ggplot() + geom_point( aes( x=longitude, y=latitude, col=Year ), cex=.5 ) + 
+        theme_bw() + scale_x_continuous(limits = c(-125,-66), breaks = NULL ) + 
+        scale_y_continuous(limits = c(25,50), breaks = NULL ) + 
+        labs(x=NULL, y=NULL)
+
+```
+
+However, if we look the number of penalties paid in each state/territory over the course of this 18-yr dataset, we can see that there are *many* more violations in some states that others, with West Virginia being responsible for `r round(nrow(viol[viol$Facility_State=="West Virginia",])/nrow(viol[viol$Facility_State!="",])*100,2)`% of all penalties levied. 
+
+```{r}
+viol %>% filter( Facility_State != "" ) %>% ggplot( aes( reorder( Facility_State, Facility_State, function(x)-length(x) ) )) + 
+                                              geom_bar( aes( fill=Major_Industry_of_Parent )) + 
+                                              coord_flip() +
+                                              theme( axis.text.y=element_text( hjust=0, size=6 ) ) +
+                                              ylab( "no. penalties" ) + 
+                                              xlab( "" ) + 
+                                              theme( legend.position="none" )
+```
+
+The bars are colored by the industrial sector of the parent corporation found liable for the penalty -- the blue that occupies `r round( nrow(viol[viol$Facility_State=="West Virginia"&viol$Major_Industry_of_Parent=="mining and minerals",]) / nrow(viol[viol$Facility_State=="West Virginia",])*100,2)`% of the West Virginia bar represents corporations classified as "mining and minerals". It is apparent that WV is unusual in both the number of violations *and* the number of those violations related to mining.
+
+## What are Corporations being Fined For?
+
+Across the 49 industrial sectors represented, it is immediately clear from this barplot the extent to which mining & mineral corporations are over-represented (`r round( nrow(viol[viol$Major_Industry_of_Parent=="mining and minerals",]) / nrow(viol)*100,2)`% of all penalties). It is also clear that the pink areas -- indicating 'workplace safety or health' violations -- comprise the majority of violations in most sectors, but particularly so in mining.
+
+```{r}
+viol %>% filter( Facility_State != "" ) %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x) ) )) + 
+                                              geom_bar( aes( fill=Primary_Offense )) + 
+                                              coord_flip() +
+                                              theme( axis.text.y=element_text( hjust=0, size=6 ) ) +
+                                              ylab( "no. penalties" ) + 
+                                              xlab( "" ) + 
+                                              theme( legend.position="none" )
 ```
 
 ```{r}
-viol %>% filter( Civ_Crim_bin=="criminal" ) %>% ggplot( aes( x=Year, y=Penalty_Amount ) ) + geom_point( alpha=0.5 ) + ylab( "Penalty amount" )
+viol %>% filter( Facility_State=="West Virginia" ) %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x)) )) + geom_bar() + coord_flip()
 ```
 
 
 ```{r}
-summary( lm( Penalty_Amount ~ Year, data=viol[ viol$Civ_Crim_bin=="civil", ] ) )
+summary( viol$Major_Industry_of_Parent )
+viol %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x)) )) + geom_bar() + coord_flip()
 ```
 
 ```{r}
-table( viol$Civ_Crim_bin, viol$Year )
+summary( viol$Primary_Offense )
+viol %>% ggplot( aes( reorder( Primary_Offense, Primary_Offense, function(x)-length(x)) )) + geom_bar() + coord_flip()
+```
+ 
+
+```{r}
+viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( Penalty_Adj )) + geom_density( aes( col=Ownership_Structure, fill=Ownership_Structure ), alpha=.5 ) + scale_x_log10()
+
+summary( lm( Penalty_Adj ~ Ownership_Structure, data=viol ) )
 ```
 
+
+```{r}
+viol %>% filter( Facility_State != "" ) %>% count( Primary_Offense, Facility_State ) %>% arrange( -n ) 
+viol %>% filter( Facility_State != "" ) %>% count( Facility_State, Major_Industry_of_Parent ) %>% arrange( -n ) 
+
+viol %>% filter( Facility_State != "" ) %>% count( Facility_State, Primary_Offense, Major_Industry_of_Parent ) %>% arrange( -n ) 
+
+viol %>% filter( Facility_State != "" ) %>% count( Primary_Offense, Facility_State ) %>% arrange( -n ) %>% 
+        ggplot( aes( Primary_Offense, Facility_State ) ) + geom_tile( aes( fill=n ), col="white" ) + 
+          scale_fill_gradient( low = "white", high = "steelblue" ) + theme_minimal() + 
+            theme( axis.text.x = element_text( angle=330, hjust=0, size=8 ), axis.text.y=element_text( hjust=0, size=6 ) )
+
+viol %>% filter( Facility_State != "" ) %>% count( Major_Industry_of_Parent, Facility_State ) %>% arrange( -n ) 
+```
+
+```{r}
+summary( lm( Penalty_Adj ~ Year  + Primary_Offense + Facility_State, data=viol ) )
+```
+
+
+
+
+```{r}
+summary( lm( Penalty_Adj ~ Year, data=viol[ viol$Civ_Crim_bin=="civil", ] ) )
+
+
+summary( lmer( Penalty_Adj ~ Year + Civ_Crim_bin + ( Year | Facility_State ), data=viol ) )
+```
