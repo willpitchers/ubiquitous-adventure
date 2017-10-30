@@ -2,9 +2,7 @@
 title: 'Data Incubator Challenge - Question 3: Project pitch'
 author: "Will Pitchers"
 date: "Saturday, 28 October 2017"
-output:
-  html_document:
-    df_print: paged
+output: html_notebook
 ---
 
 ```{r load packages}
