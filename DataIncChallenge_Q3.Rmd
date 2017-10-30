@@ -1,8 +1,10 @@
 ---
-title: "Data Incubator Challenge - Question 3: Project pitch"
+title: 'Data Incubator Challenge - Question 3: Project pitch'
 author: "Will Pitchers"
 date: "Saturday, 28 October 2017"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r load packages}
@@ -52,7 +54,7 @@ viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( Penalty_Adj )) +
           scale_colour_discrete( name="Type of\ncase brought" )
 ```
 
-The way this pattern is built up is somewhat non-intuitive, as this linear model and boxplot makes clear. The groups mean are well-separated, and easy to distinguish statistically (small p-values), but there is so much variation within groups that the predictive value of the mean differences is small (low R^2^ value). The vast majority of penalties arise from civil actions -- `r round(length(viol$Penalty_Adj[viol$Civ_Crim_bin=="civil"])/length(viol$Penalty_Adj)*100,1)`% of those recorded -- and the mean value of these penalties is comparatively small.
+The way this pattern is built up is somewhat non-intuitive, as the linear model and boxplot below make clear. The groups mean are well-separated, and easy to distinguish statistically (small p-values), but there is so much variation within groups that the predictive value of the mean differences is small (low R^2^ value). The vast majority of penalties arise from civil actions -- `r round(length(viol$Penalty_Adj[viol$Civ_Crim_bin=="civil"])/length(viol$Penalty_Adj)*100,1)`% of those recorded -- and the mean value of these penalties is comparatively small.
 
 ```{r no.s crim vs. civ, fig.keep='last'}
 summary( lm( Penalty_Adj ~ Civ_Crim_bin, data=viol ) )
@@ -101,14 +103,14 @@ full_join( viol, zipcode, by=c( "Zip" = "zip" ) ) %>% mutate( Zip=factor( Zip ) 
 
 However, if we look the number of penalties paid in each state/territory over the course of this 18-yr dataset, we can see that there are *many* more violations in some states that others, with West Virginia being responsible for `r round(nrow(viol[viol$Facility_State=="West Virginia",])/nrow(viol[viol$Facility_State!="",])*100,2)`% of all penalties levied. 
 
-```{r}
+```{r violations by state, fig.width=9, fig.height=5}
 viol %>% filter( Facility_State != "" ) %>% ggplot( aes( reorder( Facility_State, Facility_State, function(x)-length(x) ) )) + 
                                               geom_bar( aes( fill=Major_Industry_of_Parent )) + 
                                               coord_flip() +
-                                              theme( axis.text.y=element_text( hjust=0, size=6 ) ) +
+                                              theme( axis.text.y=element_text( hjust=0, size=9 ) ) +
                                               ylab( "no. penalties" ) + 
                                               xlab( "" ) + 
-                                              theme( legend.position="none" )
+                                              scale_fill_discrete( name="Industrial Sector" )
 ```
 
 The bars are colored by the industrial sector of the parent corporation found liable for the penalty -- the blue that occupies `r round( nrow(viol[viol$Facility_State=="West Virginia"&viol$Major_Industry_of_Parent=="mining and minerals",]) / nrow(viol[viol$Facility_State=="West Virginia",])*100,2)`% of the West Virginia bar represents corporations classified as "mining and minerals". It is apparent that WV is unusual in both the number of violations *and* the number of those violations related to mining.
@@ -117,63 +119,18 @@ The bars are colored by the industrial sector of the parent corporation found li
 
 Across the 49 industrial sectors represented, it is immediately clear from this barplot the extent to which mining & mineral corporations are over-represented (`r round( nrow(viol[viol$Major_Industry_of_Parent=="mining and minerals",]) / nrow(viol)*100,2)`% of all penalties). It is also clear that the pink areas -- indicating 'workplace safety or health' violations -- comprise the majority of violations in most sectors, but particularly so in mining.
 
-```{r}
+```{r violations by offense, fig.width=9, fig.height=5}
 viol %>% filter( Facility_State != "" ) %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x) ) )) + 
                                               geom_bar( aes( fill=Primary_Offense )) + 
                                               coord_flip() +
-                                              theme( axis.text.y=element_text( hjust=0, size=6 ) ) +
+                                              theme( axis.text.y=element_text( hjust=0, size=9 ) ) +
                                               ylab( "no. penalties" ) + 
                                               xlab( "" ) + 
-                                              theme( legend.position="none" )
+                                              scale_fill_discrete( name="Violation Categories" )
 ```
 
-```{r}
-viol %>% filter( Facility_State=="West Virginia" ) %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x)) )) + geom_bar() + coord_flip()
-```
+## Take-Home Message
 
+From these analyses so far, my preliminary recommendation would be that the primary focus of labor-safety lobbying efforts ought to be the West Virginian mining industry. This would also be a potentially fruitful focus for legislators and regulators, as the apparent abundance of regulatory violations would potentially allow for high statistical power in any empirical tests for the effects of regulatory/enforcement policy changes.
 
-```{r}
-summary( viol$Major_Industry_of_Parent )
-viol %>% ggplot( aes( reorder( Major_Industry_of_Parent, Major_Industry_of_Parent, function(x)-length(x)) )) + geom_bar() + coord_flip()
-```
-
-```{r}
-summary( viol$Primary_Offense )
-viol %>% ggplot( aes( reorder( Primary_Offense, Primary_Offense, function(x)-length(x)) )) + geom_bar() + coord_flip()
-```
- 
-
-```{r}
-viol %>% filter( Penalty_Adj > 0 ) %>% ggplot( aes( Penalty_Adj )) + geom_density( aes( col=Ownership_Structure, fill=Ownership_Structure ), alpha=.5 ) + scale_x_log10()
-
-summary( lm( Penalty_Adj ~ Ownership_Structure, data=viol ) )
-```
-
-
-```{r}
-viol %>% filter( Facility_State != "" ) %>% count( Primary_Offense, Facility_State ) %>% arrange( -n ) 
-viol %>% filter( Facility_State != "" ) %>% count( Facility_State, Major_Industry_of_Parent ) %>% arrange( -n ) 
-
-viol %>% filter( Facility_State != "" ) %>% count( Facility_State, Primary_Offense, Major_Industry_of_Parent ) %>% arrange( -n ) 
-
-viol %>% filter( Facility_State != "" ) %>% count( Primary_Offense, Facility_State ) %>% arrange( -n ) %>% 
-        ggplot( aes( Primary_Offense, Facility_State ) ) + geom_tile( aes( fill=n ), col="white" ) + 
-          scale_fill_gradient( low = "white", high = "steelblue" ) + theme_minimal() + 
-            theme( axis.text.x = element_text( angle=330, hjust=0, size=8 ), axis.text.y=element_text( hjust=0, size=6 ) )
-
-viol %>% filter( Facility_State != "" ) %>% count( Major_Industry_of_Parent, Facility_State ) %>% arrange( -n ) 
-```
-
-```{r}
-summary( lm( Penalty_Adj ~ Year  + Primary_Offense + Facility_State, data=viol ) )
-```
-
-
-
-
-```{r}
-summary( lm( Penalty_Adj ~ Year, data=viol[ viol$Civ_Crim_bin=="civil", ] ) )
-
-
-summary( lmer( Penalty_Adj ~ Year + Civ_Crim_bin + ( Year | Facility_State ), data=viol ) )
-```
+The over-representation of workplace health and safety violations is also noteworthy, and not limited to the mining sector, nor to West Virginia. Given the generality of this pattern, a potential ethical investor should be encouraged to investigate a corporation's history of health & safety compliance as a priority.
